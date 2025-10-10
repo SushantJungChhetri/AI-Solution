@@ -29,7 +29,6 @@
    const app = express();
 
   const envAllowlist = parseOrigins(process.env.CORS_ORIGINS);
-  // allow your production Vercel domain and all Vercel *preview* subdomains
   const vercelPreview = /^https?:\/\/[a-z0-9-]+-ai-solution-sigma\.vercel\.app$/i;
   // final allowlist: env + (optional) FRONTEND_URL env
   const allowlist = [

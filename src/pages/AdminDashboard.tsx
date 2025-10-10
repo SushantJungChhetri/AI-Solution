@@ -147,7 +147,7 @@ const AdminDashboard: React.FC = () => {
           eventsPublicAPI.list({}),
           adminFeedbackAPI.list({ page: 1, limit: 200 }).catch(() => []),
           adminGalleriesAPI.list().catch(() => []),
-          adminMetricsAPI.get().catch(() => null)
+          adminMetricsAPI.list().catch(() => null)
         ]);
 
         if (!isMounted) return;
@@ -197,7 +197,7 @@ const AdminDashboard: React.FC = () => {
   };
 
   const updateInquiryStatus = async (id: number, status: InquiryStatus) => {
-    await adminInquiriesAPI.updateStatus(id, status);
+    await adminInquiriesAPI.update(id, { status });
     setInq(prev => prev.map(i => i.id === id ? { ...i, status } : i));
     setSelectedInq(p => (p && p.id === id ? { ...p, status } : p));
   };
@@ -219,7 +219,7 @@ const AdminDashboard: React.FC = () => {
     setReplySending(true);
     setReplyError(null);
     try {
-      await adminInquiriesAPI.reply(selectedInq!.id, replyMessage.trim());
+      await adminInquiriesAPI.update(selectedInq!.id, { reply: replyMessage.trim() });
       setShowReplyModal(false);
       setReplyMessage('');
       alert('Reply sent successfully.');
@@ -290,7 +290,7 @@ const AdminDashboard: React.FC = () => {
   }, [feedback, fbSearch]);
 
   const updateFeedbackStatus = async (id: number, status: 'pending' | 'approved' | 'denied') => {
-    await adminFeedbackAPI.updateStatus(id, status);
+    await adminFeedbackAPI.update(id, { status });
     setFeedback(prev => prev.map(f => f.id === id ? { ...f, status } : f));
   };
 
@@ -729,7 +729,7 @@ const AdminDashboard: React.FC = () => {
                 <button
                 onClick={async () => {
                   try {
-                    const fullEvent = await adminEventsAPI.get(e.id);
+                    const fullEvent = await adminEventsAPI.getById(e.id);
                     // Map image_url to imageUrl and keep image_url for EventForm initial
                     const eventWithImage = {
                       ...fullEvent,

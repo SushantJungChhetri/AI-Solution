@@ -58,4 +58,77 @@ const apiRequest = async (endpoint: string, options: ApiRequestOptions = {}) => 
   return res.json();
 };
 
+// Generic API client factory
+const createApiClient = (basePath: string, useAuth: boolean = false) => {
+  const client = {
+    list: async (params?: Record<string, any>) => {
+      const query = new URLSearchParams(params).toString();
+      const endpoint = query ? `${basePath}?${query}` : basePath;
+      return apiRequest(endpoint, { method: 'GET' });
+    },
+    getById: async (id: string | number) => {
+      return apiRequest(`${basePath}/${id}`, { method: 'GET' });
+    },
+    getBySlug: async (slug: string) => {
+      return apiRequest(`${basePath}/slug/${slug}`, { method: 'GET' });
+    },
+    create: async (data: any) => {
+      const options: ApiRequestOptions = { method: 'POST', body: data };
+      if (useAuth) options.headers = getAuthHeaders();
+      return apiRequest(basePath, options);
+    },
+    update: async (id: string | number, data: any) => {
+      const options: ApiRequestOptions = { method: 'PUT', body: data };
+      if (useAuth) options.headers = getAuthHeaders();
+      return apiRequest(`${basePath}/${id}`, options);
+    },
+    delete: async (id: string | number) => {
+      const options: ApiRequestOptions = { method: 'DELETE' };
+      if (useAuth) options.headers = getAuthHeaders();
+      return apiRequest(`${basePath}/${id}`, options);
+    },
+    upload: async (formData: FormData) => {
+      const options: ApiRequestOptions = { method: 'POST', body: formData };
+      if (useAuth) options.headers = getAuthHeaders(false); // No Content-Type for FormData
+      return apiRequest(`${basePath}/upload`, options);
+    }
+  };
+  return client;
+};
+
+// Public API Clients (no auth)
+export const feedbackPublicAPI = createApiClient('/feedback');
+export const articlesPublicAPI = createApiClient('/articles');
+export const eventsPublicAPI = createApiClient('/events');
+export const galleriesPublicAPI = createApiClient('/galleries');
+export const contactAPI = createApiClient('/inquiries'); // Assuming contact uses inquiries endpoint
+
+// Admin API Clients (with auth)
+export const adminArticlesAPI = createApiClient('/admin/articles', true);
+export const adminEventsAPI = createApiClient('/admin/events', true);
+export const adminFeedbackAPI = createApiClient('/admin/feedback', true);
+export const adminGalleriesAPI = createApiClient('/admin/galleries', true);
+export const adminInquiriesAPI = createApiClient('/admin/inquiries', true);
+export const adminMetricsAPI = createApiClient('/admin/metrics', true);
+
+// AI API (assuming public or auth based on usage)
+export const aiAPI = createApiClient('/ai');
+
+// Auth API for admin login (with auth, but sendOTP/verifyOTP don't require token)
+export const authAPI = {
+  ...createApiClient('/auth', false), // No auth for initial sendOTP
+  sendOTP: async (email: string, password: string) => {
+    return apiRequest('/auth/login', {
+      method: 'POST',
+      body: { email, password }
+    });
+  },
+  verifyOTP: async (email: string, otp: string) => {
+    return apiRequest('/auth/verify-otp', {
+      method: 'POST',
+      body: { email, otp }
+    });
+  }
+};
+
 export { apiRequest, getAuthHeaders };

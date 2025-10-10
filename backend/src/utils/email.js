@@ -17,9 +17,6 @@ const {
   NODE_ENV
 } = process.env;
 
-console.log('EMAIL_USER:', EMAIL_USER);
-console.log('EMAIL_PASS:', EMAIL_PASS);
-
 let transporter = null;
 
 if (!EMAIL_USER || !EMAIL_PASS) {

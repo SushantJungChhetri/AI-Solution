@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(date DESC);
 CREATE INDEX IF NOT EXISTS idx_events_date_time_range ON events(date DESC, time_range DESC);
 
+ALTER TABLE articles
+  ADD COLUMN IF NOT EXISTS image_filename TEXT;
+
+-- Backfill once from existing columns so SELECTs stop failing
+UPDATE articles
+SET image_filename = COALESCE(image_filename, image_url, image)
+WHERE image_filename IS NULL;
+
 -- 5) GALLERIES IMAGES (flat table for gallery images)
 CREATE TABLE IF NOT EXISTS gallery_images (
   id SERIAL PRIMARY KEY,

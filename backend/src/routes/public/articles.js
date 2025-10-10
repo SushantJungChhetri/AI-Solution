@@ -54,7 +54,6 @@ router.get('/', async (req, res, next) => {
         tags,
         views,
         featured,
-        image_filename,
         image
       FROM articles
       ${whereSql}

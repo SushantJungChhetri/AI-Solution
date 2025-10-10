@@ -5,6 +5,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { articleUpsert } from '../../validations/admin.js';
 import slugify from '../../utils/slugify.js';
 import path from 'path';
+import { uploadBufferToBlob } from '../../utils/blob.js';
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -19,7 +20,13 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+import { uploadBufferToBlob } from '../../utils/blob.js';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
+
 
 const router = express.Router();
 router.use(requireAuth);
@@ -36,12 +43,15 @@ router.post('/', upload.single('image'), async (req, res, next) => {
 
     const data = articleUpsert.parse(req.body);
     const slug = slugify(data.title);
-    let image = null;
-    if (req.file) {
-      image = req.file.filename;
-    } else if (typeof req.body.image === 'string' && req.body.image.trim() !== '') {
-      image = req.body.image.trim();
-    }
+let imageUrl = null;
+
+if (req.file) {
+  // upload to Blob, keep public URL
+  imageUrl = await uploadBufferToBlob(req.file, 'articles');
+} else if (typeof req.body.image_url === 'string' && req.body.image_url.trim()) {
+  // allow passing a direct URL too
+  imageUrl = req.body.image_url.trim();
+}
     const { rows } = await query(`
       INSERT INTO articles (title, slug, excerpt, description, author, published_at,
                             read_time, category, tags, featured, image)

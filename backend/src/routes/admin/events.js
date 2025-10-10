@@ -3,42 +3,46 @@ import { query } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { eventUpsert } from '../../validations/admin.js';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
+import { uploadBufferToBlob } from '../../utils/blob.js';
 
 const router = express.Router();
 router.use(requireAuth);
 
-// ---- Multer storage ----
-const uploadsDir = path.join(process.cwd(), 'uploads');
-const eventsDir = path.join(uploadsDir, 'events');
-if (!fs.existsSync(eventsDir)) fs.mkdirSync(eventsDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, eventsDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const base = path.basename(file.originalname, ext).replace(/\s+/g, '_');
-    cb(null, `${Date.now()}_${base}${ext}`);
-  }
+// ---- Multer (memory) ----
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
 });
-const upload = multer({ storage });
 
-// Helper: build absolute URL for a filename
-function makeImageUrl(req, filename) {
-  if (!filename) return null;
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.get('host');
-  return `${proto}://${host}/uploads/events/${filename}`;
-}
+// Helper to decide final image fields from inputs
+async function resolveImageFields({ file, body, existing }) {
+  // existing: row with current image fields (for UPDATE), or null (for CREATE)
+  const clear = body?.clearImage === 'true' || body?.clearImage === true;
 
-// Helper: delete image file from disk
-function deleteImageFile(filename) {
-  if (!filename) return;
-  const filePath = path.join(eventsDir, filename);
-  fs.unlink(filePath, (err) => {
-    if (err) console.error('Failed to delete image file:', err);
-  });
+  if (clear) {
+    return { image_filename: null, image_url: null };
+  }
+
+  // 1) New file uploaded → upload to Blob, store URL, filename=NULL
+  if (file) {
+    const url = await uploadBufferToBlob(file, 'events');
+    return { image_filename: null, image_url: url };
+  }
+
+  // 2) External image_url provided → store it; filename=NULL
+  if (typeof body?.image_url === 'string' && body.image_url.trim()) {
+    return { image_filename: null, image_url: body.image_url.trim() };
+  }
+
+  // 3) Otherwise keep existing (on UPDATE) or null (on CREATE)
+  if (existing) {
+    return {
+      image_filename: existing.image_filename ?? null,
+      image_url: existing.image_url ?? null,
+    };
+  }
+
+  return { image_filename: null, image_url: null };
 }
 
 // ---- CREATE ----
@@ -47,81 +51,66 @@ router.post('/', upload.single('imageFile'), async (req, res, next) => {
   try {
     const d = eventUpsert.parse(req.body);
 
-    const imageFilename = req.file?.filename ?? null;
+    const { image_filename, image_url } = await resolveImageFields({
+      file: req.file,
+      body: req.body,
+      existing: null,
+    });
 
-    const { rows } = await query(`
+    const { rows } = await query(
+      `
       INSERT INTO events (
         title, description, date, time_range, location, type,
-        attendees, max_attendees, image_filename, image_url, featured, status
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        attendees, max_attendees, image_filename, image_url, featured, status,
+        created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW(), NOW())
       RETURNING id, title, description, date, time_range, location, type,
                 attendees, max_attendees, image_filename, image_url, featured, status
-    `, [
-      d.title,
-      d.description ?? null,
-      d.date,
-      d.time_range ?? null,
-      d.location ?? null,
-      d.type,
-      d.attendees ?? 0,
-      d.max_attendees ?? null,
-      imageFilename,
-      d.image_url ?? null,
-      !!d.featured,
-      d.status ?? 'upcoming'
-    ]);
+      `,
+      [
+        d.title,
+        d.description ?? null,
+        d.date,
+        d.time_range ?? null,
+        d.location ?? null,
+        d.type,
+        d.attendees ?? 0,
+        d.max_attendees ?? null,
+        image_filename,       // will be null on Vercel
+        image_url,            // Blob or external URL or null
+        !!d.featured,
+        d.status ?? 'upcoming',
+      ]
+    );
 
-    const row = rows[0];
-    // Use external image_url if present, else build URL from filename
-    row.image_url = row.image_url || makeImageUrl(req, row.image_filename);
-
-    return res.status(201).json(row);
+    return res.status(201).json(rows[0]);
   } catch (e) {
     next(e);
   }
 });
 
 // ---- UPDATE ----
-// only replace image if a new file is provided; otherwise keep existing
+// only replace image if a new file is provided / image_url sent / clearImage=true
 router.put('/:id', upload.single('imageFile'), async (req, res, next) => {
   try {
+    const id = Number(req.params.id);
     const d = eventUpsert.parse(req.body);
-    const newFile = req.file?.filename ?? null;
 
-    // Get current image_filename to delete old file if needed
-    const { rows: currentRows } = await query(`
-      SELECT image_filename FROM events WHERE id = $1
-    `, [Number(req.params.id)]);
-    const currentImageFilename = currentRows[0]?.image_filename;
+    // Fetch current to preserve fields if no new image instruction is given
+    const { rows: currentRows } = await query(
+      `SELECT id, image_filename, image_url FROM events WHERE id = $1`,
+      [id]
+    );
+    if (!currentRows[0]) return res.status(404).json({ error: 'Not found' });
 
-    let imageFilenameToStore = newFile;
-    let imageUrlToStore = d.image_url || null;
+    const { image_filename, image_url } = await resolveImageFields({
+      file: req.file,
+      body: req.body,
+      existing: currentRows[0],
+    });
 
-    if (d.clearImage) {
-      // Clear both image_filename and image_url
-      imageFilenameToStore = null;
-      imageUrlToStore = null;
-      // Delete the old file if it exists
-      if (currentImageFilename) {
-        deleteImageFile(currentImageFilename);
-      }
-    } else if (d.image_url && !newFile) {
-      // External URL provided, clear filename
-      imageFilenameToStore = null;
-      // Delete the old file if it exists
-      if (currentImageFilename) {
-        deleteImageFile(currentImageFilename);
-      }
-    } else if (newFile) {
-      // New file uploaded, clear URL
-      imageUrlToStore = null;
-      // Delete the old file if it exists and is different
-      if (currentImageFilename && currentImageFilename !== newFile) {
-        deleteImageFile(currentImageFilename);
-      }
-    }
-
-    const { rows } = await query(`
+    const { rows } = await query(
+      `
       UPDATE events
       SET
         title         = $1,
@@ -135,33 +124,30 @@ router.put('/:id', upload.single('imageFile'), async (req, res, next) => {
         max_attendees = $9,
         image_filename = $10,
         image_url     = $11,
-        featured      = $12
+        featured      = $12,
+        updated_at    = NOW()
       WHERE id        = $13
       RETURNING id, title, description, date, time_range, location, type,
                 attendees, max_attendees, image_filename, image_url, featured, status
-    `, [
-      d.title,
-      d.description ?? null,
-      d.date,
-      d.time_range ?? null,
-      d.location ?? null,
-      d.type,
-      d.status ?? 'upcoming',
-      Number(d.attendees ?? 0),
-      d.max_attendees !== undefined && d.max_attendees !== null ? Number(d.max_attendees) : null,
-      imageFilenameToStore,                // can be string or null
-      imageUrlToStore,                     // can be string or null
-      !!d.featured,
-      Number(req.params.id)
-    ]);
+      `,
+      [
+        d.title,
+        d.description ?? null,
+        d.date,
+        d.time_range ?? null,
+        d.location ?? null,
+        d.type,
+        d.status ?? 'upcoming',
+        Number(d.attendees ?? 0),
+        d.max_attendees !== undefined && d.max_attendees !== null ? Number(d.max_attendees) : null,
+        image_filename,  // likely null
+        image_url,       // Blob/external/kept/null
+        !!d.featured,
+        id,
+      ]
+    );
 
-    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-
-    const row = rows[0];
-    // Use external image_url if present, else build URL from filename
-    row.image_url = row.image_url || makeImageUrl(req, row.image_filename);
-
-    res.json(row);
+    res.json(rows[0]);
   } catch (e) {
     next(e);
   }
@@ -170,8 +156,10 @@ router.put('/:id', upload.single('imageFile'), async (req, res, next) => {
 // ---- DELETE ----
 router.delete('/:id', async (req, res, next) => {
   try {
-    const { rowCount } = await query('DELETE FROM events WHERE id=$1', [Number(req.params.id)]);
+    const id = Number(req.params.id);
+    const { rowCount } = await query('DELETE FROM events WHERE id=$1', [id]);
     if (!rowCount) return res.status(404).json({ error: 'Not found' });
+    // (Optional) If you want to delete Blob objects too, store blob keys and call @vercel/blob del()
     res.json({ ok: true });
   } catch (e) {
     next(e);
@@ -181,36 +169,34 @@ router.delete('/:id', async (req, res, next) => {
 // ---- GET single event by id ----
 router.get('/:id', async (req, res, next) => {
   try {
-    const { rows } = await query(`
+    const { rows } = await query(
+      `
       SELECT id, title, description, date, time_range, location, type,
              attendees, max_attendees, image_filename, image_url, featured, status
       FROM events
       WHERE id = $1
-    `, [Number(req.params.id)]);
+      `,
+      [Number(req.params.id)]
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Event not found' });
-    const row = rows[0];
-    // Use external image_url if present, else build from image_filename
-    row.image_url = row.image_url || makeImageUrl(req, row.image_filename);
-    res.json(row);
+    res.json(rows[0]);
   } catch (e) {
     next(e);
   }
 });
 
-// ---- LIST (handy for debugging the image URL) ----
-router.get('/', async (req, res, next) => {
+// ---- LIST ----
+router.get('/', async (_req, res, next) => {
   try {
-    const { rows } = await query(`
+    const { rows } = await query(
+      `
       SELECT id, title, description, date, time_range, location, type,
              attendees, max_attendees, image_filename, image_url, featured, status
       FROM events
       ORDER BY date DESC NULLS LAST, id DESC
-    `);
-    const mapped = rows.map(r => ({
-      ...r,
-      image_url: r.image_url || makeImageUrl(req, r.image_filename),
-    }));
-    res.json(mapped);
+      `
+    );
+    res.json(rows);
   } catch (e) {
     next(e);
   }

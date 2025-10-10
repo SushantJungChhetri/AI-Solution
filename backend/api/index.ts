@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
+// @ts-ignore
 import { query } from "../src/db.js";
 
 

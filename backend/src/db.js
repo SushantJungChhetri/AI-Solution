@@ -15,7 +15,7 @@ const config = DATABASE_URL
   ? {
       connectionString: DATABASE_URL,
       // Most managed Postgres (Neon, Vercel Postgres, Render, Railway) require SSL
-      ssl: isProd ? { rejectUnauthorized: false } : false,
+      ssl: { rejectUnauthorized: false },
       // Serverless-friendly pool sizing
       max: isProd ? 5 : 10,
       idleTimeoutMillis: 10_000,

@@ -1,32 +1,45 @@
+// backend/src/routes/admin/auth.js
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { query } from '../../db.js';
-import { loginSchema } from '../../validations/admin.js';
 import { sendOTP } from '../../utils/email.js';
 
 const router = express.Router();
 
-// Send OTP
+// POST /auth/login  -> send OTP to the single allowed admin
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    let { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: 'MISSING_CREDENTIALS' });
+    }
 
-    // Restrict to only sushantkch@gmail.com
-    if (email !== 'sushantkch@gmail.com') return res.status(401).json({ error: 'Invalid credentials' });
+    email = String(email).toLowerCase();
 
+    // Restrict to the single admin
+    if (email !== 'sushantkch@gmail.com') {
+      return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS' });
+    }
+
+    // Find admin
     const { rows } = await query(
       `SELECT id, email, password_hash FROM admins WHERE email = $1`,
       [email]
     );
     const admin = rows[0];
-    if (!admin) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!admin) {
+      return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS' });
+    }
 
+    // Verify password
     const isValid = await bcrypt.compare(password, admin.password_hash);
-    if (!isValid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!isValid) {
+      return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS' });
+    }
 
+    // Generate OTP and store with expiry
     const otp = crypto.randomInt(100000, 999999).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
@@ -35,20 +48,30 @@ router.post('/login', async (req, res, next) => {
       [otp, expiresAt, email]
     );
 
-    await sendOTP(email, otp);
-    res.json({ message: 'OTP sent to your email' });
-  } catch (e) { next(e); }
+    // Send OTP (do NOT throw on failure; return a clear error)
+    const result = await sendOTP(email, otp);
+    if (!result?.ok) {
+      return res.status(500).json({ ok: false, error: result?.error || 'MAIL_SEND_FAILED' });
+    }
+
+    return res.json({ ok: true, message: 'OTP_SENT' });
+  } catch (err) {
+    console.error('[auth/login] error:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'SERVER_ERROR' });
+  }
 });
 
-// Direct login for specific admin
-router.post('/login-direct', async (req, res, next) => {
+router.post('/login-direct', async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    let { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: 'MISSING_CREDENTIALS' });
+    }
 
-    // Only allow sushantkch@gmail.com with Admin@123
+    email = String(email).toLowerCase();
+
     if (email !== 'sushantkch@gmail.com' || password !== 'Admin@123') {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ ok: false, error: 'INVALID_CREDENTIALS' });
     }
 
     const { rows } = await query(
@@ -56,31 +79,53 @@ router.post('/login-direct', async (req, res, next) => {
       [email]
     );
     const admin = rows[0];
-    if (!admin) return res.status(401).json({ error: 'Admin not found' });
+    if (!admin) {
+      return res.status(401).json({ ok: false, error: 'ADMIN_NOT_FOUND' });
+    }
 
     if (!process.env.JWT_SECRET) {
-      return res.status(500).json({ error: 'JWT_SECRET is not set in environment variables' });
+      return res.status(500).json({ ok: false, error: 'JWT_SECRET_MISSING' });
     }
-    const token = jwt.sign({ id: admin.id, email: admin.email }, process.env.JWT_SECRET, { expiresIn: '8h' });
-    res.json({ token, admin: { id: admin.id, email: admin.email } });
-  } catch (e) { next(e); }
+
+    const token = jwt.sign(
+      { id: admin.id, email: admin.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    return res.json({ ok: true, token, admin: { id: admin.id, email: admin.email } });
+  } catch (err) {
+    console.error('[auth/login-direct] error:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'SERVER_ERROR' });
+  }
 });
 
-// Verify OTP
-router.post('/verify-otp', async (req, res, next) => {
+// POST /auth/verify-otp
+router.post('/verify-otp', async (req, res) => {
   try {
-    const { email, otp } = req.body;
-    if (!email || !otp) return res.status(400).json({ error: 'Email and OTP are required' });
+    let { email, otp } = req.body || {};
+    if (!email || !otp) {
+      return res.status(400).json({ ok: false, error: 'MISSING_FIELDS' });
+    }
+
+    email = String(email).toLowerCase();
 
     const { rows } = await query(
       `SELECT id, email, otp_code, otp_expires_at FROM admins WHERE email = $1`,
       [email]
     );
     const admin = rows[0];
-    if (!admin) return res.status(401).json({ error: 'Admin not found' });
+    if (!admin) {
+      return res.status(401).json({ ok: false, error: 'ADMIN_NOT_FOUND' });
+    }
 
-    if (admin.otp_code !== otp || new Date() > admin.otp_expires_at) {
-      return res.status(401).json({ error: 'Invalid or expired OTP' });
+    if (!admin.otp_code || !admin.otp_expires_at) {
+      return res.status(401).json({ ok: false, error: 'OTP_MISSING' });
+    }
+
+    const now = new Date();
+    if (admin.otp_code !== String(otp) || now > new Date(admin.otp_expires_at)) {
+      return res.status(401).json({ ok: false, error: 'OTP_INVALID_OR_EXPIRED' });
     }
 
     // Clear OTP
@@ -90,11 +135,20 @@ router.post('/verify-otp', async (req, res, next) => {
     );
 
     if (!process.env.JWT_SECRET) {
-      return res.status(500).json({ error: 'JWT_SECRET is not set in environment variables' });
+      return res.status(500).json({ ok: false, error: 'JWT_SECRET_MISSING' });
     }
-    const token = jwt.sign({ id: admin.id, email: admin.email }, process.env.JWT_SECRET, { expiresIn: '8h' });
-    res.json({ token, admin: { id: admin.id, email: admin.email } });
-  } catch (e) { next(e); }
+
+    const token = jwt.sign(
+      { id: admin.id, email: admin.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    return res.json({ ok: true, token, admin: { id: admin.id, email: admin.email } });
+  } catch (err) {
+    console.error('[auth/verify-otp] error:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'SERVER_ERROR' });
+  }
 });
 
 export default router;

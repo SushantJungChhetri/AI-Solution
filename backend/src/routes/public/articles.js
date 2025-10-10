@@ -95,7 +95,6 @@ router.get('/:slug', async (req, res, next) => {
         tags,
         views,
         featured,
-        image_filename,
         image,
         created_at,
         updated_at

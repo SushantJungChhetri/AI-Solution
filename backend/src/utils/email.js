@@ -9,49 +9,65 @@ function asBool(v) {
 
 const {
   EMAIL_HOST = "smtp.gmail.com",
-  EMAIL_PORT = "587",                 
-  EMAIL_SECURE = "false",             
+  EMAIL_PORT = "587",                 // 587 (STARTTLS) or 465 (SMTPS)
+  EMAIL_SECURE,                       // optional; we will infer from port if not set
   EMAIL_USER,
-  EMAIL_PASS,
-  EMAIL_FROM,                        
+  EMAIL_PASS,                         // <-- use a Gmail App Password
+  EMAIL_FROM,
   NODE_ENV,
 } = process.env;
 
-let transporter = null;
-
-if (!EMAIL_USER || !EMAIL_PASS) {
-  console.warn(
-    "[mail] EMAIL_USER/EMAIL_PASS missing. Email disabled. " +
-      "For Gmail, create a 16-char App Password and put it in EMAIL_PASS."
-  );
-} else {
-  transporter = nodemailer.createTransport({
-    host: EMAIL_HOST,
-    port: Number(EMAIL_PORT) || 587,
-    secure: asBool(EMAIL_SECURE),     
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
-    requireTLS: true,                
-    pool: true,                       
-    connectionTimeout: 30000,        
-    greetingTimeout: 20000,
-    socketTimeout: 40000,
-  });
-
-
-  if (NODE_ENV !== "test") {
-    setTimeout(() => {
-      transporter
-        .verify()
-        .then(() => console.log("[mail] SMTP verified"))
-        .catch((err) =>
-          console.warn("[mail] SMTP verify failed (non-fatal):", err?.message || err)
-        );
-    }, 0);
-  }
+function resolveSecure(port, explicit) {
+  if (explicit != null) return asBool(explicit);
+  return String(port) === "465";      // secure:true for 465, false otherwise
 }
 
+function createTransport() {
+  if (!EMAIL_USER || !EMAIL_PASS) {
+    console.warn("[mail] EMAIL_USER/EMAIL_PASS missing. Email disabled.");
+    return null;
+  }
+
+  const secure = resolveSecure(EMAIL_PORT, EMAIL_SECURE);
+
+  return nodemailer.createTransport({
+    host: EMAIL_HOST,
+    port: Number(EMAIL_PORT) || 587,
+    secure,                           // true for 465, false for 587
+    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+    requireTLS: !secure,              // STARTTLS path for 587
+    pool: false,                      // IMPORTANT: avoid idle pooled sockets on Render
+    connectionTimeout: 15_000,        // TCP connect timeout
+    greetingTimeout: 10_000,          // wait for banner
+    socketTimeout: 20_000,            // inactivity after connect
+  });
+}
+
+let transporter = createTransport();
+
+// DO NOT verify at startup—causes noisy "non-fatal: timeout" logs on hosts
+// if (transporter && NODE_ENV !== "test") { ...transporter.verify()... }
+
 function fromAddress() {
-  return EMAIL_FROM || EMAIL_USER || "no-reply@example.com";
+  // nice "Name <email@...>" if EMAIL_FROM provides only a name or address
+  const from = EMAIL_FROM || EMAIL_USER || "no-reply@example.com";
+  return /<.*@.*>/.test(from) || /@/.test(from) ? from : `"AI Solutions" <${EMAIL_USER}>`;
+}
+
+// tiny retry helper for transient network hiccups
+async function withRetry(fn, attempts = 3) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); }
+    catch (e) {
+      lastErr = e;
+      // backoff: 0.5s, 1s, 1.5s
+      await new Promise(r => setTimeout(r, (i + 1) * 500));
+      // recreate transport if connection died
+      transporter = createTransport();
+    }
+  }
+  throw lastErr;
 }
 
 export async function sendOTP(email, otp) {
@@ -71,7 +87,7 @@ export async function sendOTP(email, otp) {
   };
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await withRetry(() => transporter.sendMail(mailOptions));
     console.log("[mail] OTP email sent:", info.messageId);
     return { ok: true };
   } catch (error) {
@@ -95,13 +111,9 @@ export async function sendReply(toEmail, replyMessage, inquiryDetails) {
   `;
 
   try {
-    const info = await transporter.sendMail({
-      from: fromAddress(),
-      to: toEmail,
-      subject,
-      text,
-      html,
-    });
+    const info = await withRetry(() =>
+      transporter.sendMail({ from: fromAddress(), to: toEmail, subject, text, html })
+    );
     console.log("[mail] Reply email sent:", info.messageId);
     return { ok: true };
   } catch (error) {

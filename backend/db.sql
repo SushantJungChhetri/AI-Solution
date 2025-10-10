@@ -83,11 +83,6 @@ CREATE TABLE IF NOT EXISTS gallery_images (
 );
 CREATE INDEX IF NOT EXISTS idx_gallery_images_uploaded_at ON gallery_images(uploaded_at DESC);
 
--- Galleries removed (using gallery_images as flat structure)
-
--- Gallery images removed (integrated into gallery_images)
-
--- 7) FEEDBACK (public submit + admin moderation)
 CREATE TABLE IF NOT EXISTS feedback (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
@@ -129,20 +124,4 @@ FROM public.customer_inquiries;
 -- 9) Helpful indexes
 CREATE INDEX IF NOT EXISTS idx_inquiries_submitted ON customer_inquiries (submitted_at DESC);
 
--- 10) Ownership and privileges (only if role ai_user exists)
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ai_user') THEN
-    EXECUTE 'ALTER SCHEMA public OWNER TO ai_user';
-    -- Transfer ownership of tables
-    PERFORM
-      (SELECT string_agg(format('ALTER TABLE public.%I OWNER TO ai_user;', t.tablename), E' ')
-       FROM pg_tables t WHERE t.schemaname='public');
-    -- Transfer ownership of sequences
-    PERFORM
-      (SELECT string_agg(format('ALTER SEQUENCE public.%I OWNER TO ai_user;', s.sequence_name), E' ')
-       FROM information_schema.sequences s WHERE s.sequence_schema='public');
-    EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO ai_user';
-    EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO ai_user';
-  END IF;
-END $$;
+

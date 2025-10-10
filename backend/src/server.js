@@ -4,7 +4,7 @@ import express from 'express';
 import { createApi } from './app.js';
 import { assertDatabaseConnectionOk } from './db.js';
 
-const PORT = Number(process.env.PORT || 4000);
+const PORT = Number(process.env.PORT || 3000);
 
 const root = express();
 root.use('/api', createApi());

@@ -16,11 +16,13 @@ import AdminLogin from './pages/AdminLogin';
 import GalleriesPage from './pages/GalleriesPage';
 
 function App() {
+  const isAdminRoute = window.location.pathname.startsWith('/admin');
+
   return (
     <Router>
       <RouteRender />
-      <FloatingAIAssistant />
-      <FloatingFeedbackIcon />
+      {!isAdminRoute && <FloatingAIAssistant />}
+      {!isAdminRoute && <FloatingFeedbackIcon />}
     </Router>
   );
 }

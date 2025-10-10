@@ -1,45 +1,20 @@
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
 import { query } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { uploadBufferToBlob } from '../../utils/blob.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 router.use(requireAuth);
 
-// Configure multer for file uploads
-const uploadDir = path.join(__dirname, '../../../uploads/galleries');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
+// Vercel-safe: no disk writes, use in-memory buffer
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
 });
-const upload = multer({ storage });
-
-// Helper to delete image file from disk
-function deleteImageFile(filename) {
-  if (!filename) return;
-  const filePath = path.join(uploadDir, filename);
-  fs.unlink(filePath, (err) => {
-    if (err) {
-      console.error('Failed to delete file:', err);
-    }
-  });
-}
 
 // GET /admin/galleries - list all gallery images
-router.get('/', async (req, res, next) => {
+router.get('/', async (_req, res, next) => {
   try {
     const { rows } = await query(`
       SELECT id, filename, url, uploaded_at AS "uploadedAt"
@@ -53,19 +28,31 @@ router.get('/', async (req, res, next) => {
 });
 
 // POST /admin/galleries - upload a new gallery image
+// Accepts either a multipart file field "image" OR a JSON body { image_url: "https://..." }
 router.post('/', upload.single('image'), async (req, res, next) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No image file uploaded' });
-    }
-    const filename = req.file.filename;
-    const url = `/uploads/galleries/${filename}`;
+    let publicUrl = null;
+    let filenameToStore = null;
 
-    const { rows } = await query(`
-      INSERT INTO gallery_images (filename, url)
-      VALUES ($1, $2)
+    if (req.file) {
+      // Upload buffer to Vercel Blob; store public URL
+      publicUrl = await uploadBufferToBlob(req.file, 'galleries');
+      filenameToStore = null; // filesystem filename not used on Vercel
+    } else if (typeof req.body?.image_url === 'string' && req.body.image_url.trim()) {
+      publicUrl = req.body.image_url.trim();
+      filenameToStore = null;
+    } else {
+      return res.status(400).json({ error: 'No image provided. Send a file field "image" or "image_url".' });
+    }
+
+    const { rows } = await query(
+      `
+      INSERT INTO gallery_images (filename, url, uploaded_at)
+      VALUES ($1, $2, NOW())
       RETURNING id, filename, url, uploaded_at AS "uploadedAt"
-    `, [filename, url]);
+      `,
+      [filenameToStore, publicUrl]
+    );
 
     res.status(201).json(rows[0]);
   } catch (e) {
@@ -73,29 +60,13 @@ router.post('/', upload.single('image'), async (req, res, next) => {
   }
 });
 
-// DELETE /admin/galleries/:id - delete a gallery image
+// DELETE /admin/galleries/:id - delete a gallery image (DB row only)
+// (If you also want to delete the Blob object, store the blob key and call @vercel/blob del() here.)
 router.delete('/:id', async (req, res, next) => {
   try {
-    const id = parseInt(req.params.id);
-
-    // Get filename to delete file
-    const { rows: selectRows } = await query(
-      'SELECT filename FROM gallery_images WHERE id = $1',
-      [id]
-    );
-
-    if (selectRows.length === 0) {
-      return res.status(404).json({ error: 'Image not found' });
-    }
-
-    const filename = selectRows[0].filename;
-
-    // Delete from DB
-    await query('DELETE FROM gallery_images WHERE id = $1', [id]);
-
-    // Delete file from disk
-    deleteImageFile(filename);
-
+    const id = Number(req.params.id);
+    const { rowCount } = await query('DELETE FROM gallery_images WHERE id = $1', [id]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Image not found' });
     res.json({ success: true });
   } catch (e) {
     next(e);

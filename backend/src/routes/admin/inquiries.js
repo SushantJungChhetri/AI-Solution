@@ -2,7 +2,6 @@ import express from 'express';
 import { query } from '../../db.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { Parser } from 'json2csv';
-import { sendReply } from '../../utils/email.js';
 
 const router = express.Router();
 router.use(requireAuth);
@@ -85,9 +84,9 @@ router.post('/:id/reply', async (req, res, next) => {
 
     const inquiry = rows[0];
 
-    await sendReply(inquiry.email, message.trim(), inquiry);
+    console.log(`Reply logged for inquiry ${inquiryId}: ${message.trim()}`);
 
-    res.json({ ok: true, message: 'Reply sent successfully' });
+    res.json({ ok: true, message: 'Reply logged successfully' });
   } catch (e) {
     next(e);
   }

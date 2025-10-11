@@ -25,21 +25,33 @@ export function createApi() {
   const app = express();
 
   /***********************
-   * CORS (step 6A)
-   * - Allow your exact Vercel prod domain(s) + localhost.
-   * - Also allow *.vercel.app previews via regex.
+   * CORS
+   * - Allow exact prod origins via env ALLOWED_ORIGINS
+   * - Allow *.vercel.app previews
+   * - Allow localhost:5173
    ***********************/
-  const allowedOrigins = new Set([
-    'http://localhost:5173',
-    'https://ai-solution-sigma.vercel.app',
-    'https://ai-solution-9gw6i3htk-sushant-kunwar-chhetris-projects.vercel.app',
-  ]);
-  const vercelPreviewRegex = /\.vercel\.app$/i;
+  const envList =
+    (process.env.ALLOWED_ORIGINS || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+
+  // Normalize (strip trailing /)
+  const allowedOrigins = new Set(
+    [
+      'http://localhost:5173',
+      // Add your primary Vercel domain(s) here or via ALLOWED_ORIGINS
+      'https://ai-solutionwebsite.vercel.app',
+      ...envList,
+    ].map(o => o.replace(/\/+$/g, ''))
+  );
+
+  const vercelPreviewRegex = /^https:\/\/.*\.vercel\.app$/i;
 
   app.use(
     cors({
       origin(origin, cb) {
-        // allow same-origin requests (no Origin header), curl, server-to-server
+        // same-origin, curl, server-to-server
         if (!origin) return cb(null, true);
 
         const normalized = origin.replace(/\/+$/g, '');
@@ -54,35 +66,37 @@ export function createApi() {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       credentials: false, // set true only if you actually use cookies across origins
+      maxAge: 86400, // cache preflight 24h
     })
   );
 
-  // Handle preflight globally
-  app.options('*', cors());
+  // Handle preflight quickly
+  app.options('*', (req, res) => {
+    res.set('Access-Control-Max-Age', '86400');
+    res.sendStatus(204);
+  });
 
   /***********************
-   * Security & utilities (step 6B)
+   * Security & utilities
    ***********************/
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    })
+  );
   app.use(express.json({ limit: '2mb' }));
   app.use(morgan('tiny'));
 
-  /***********************
-   * Simple ping
-   * NOTE: app is mounted under /api from server.js,
-   * so this responds at GET /api/
-   ***********************/
+  // Optional: simple health/ping at /api/
   app.get('/', (_req, res) => res.json({ ok: true, service: 'AI-Solution API' }));
 
   /***********************
-   * Health routes (step 3/4)
-   * - /api/health/db returns DB now + table counts
+   * Health
    ***********************/
   app.use('/health', health);
 
   /***********************
    * Public routes
-   * (will be available under /api/<route>)
    ***********************/
   app.use('/articles', publicArticles);
   app.use('/events', publicEvents);
@@ -102,16 +116,14 @@ export function createApi() {
   app.use('/admin/galleries', adminGalleries);
 
   /***********************
-   * 404 handler (step 6C)
-   * - For any unknown path under this app (/api/*)
+   * 404 handler
    ***********************/
   app.use('*', (_req, res) => {
     res.status(404).json({ error: 'Not Found' });
   });
 
   /***********************
-   * Global error handler (step 6D)
-   * - Logs on server, returns safe JSON to client
+   * Global error handler
    ***********************/
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => {

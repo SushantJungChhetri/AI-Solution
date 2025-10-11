@@ -26,26 +26,18 @@ export function createApi() {
     "http://localhost:5173",                
   ];
 
-  app.use(
-    cors({
-      origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-
-        if (allowedOrigins.includes(origin)) {
-          return callback(null, true);
-        } else {
-          console.warn("[CORS blocked]:", origin);
-          return callback(new Error("CORS: origin not allowed"));
-        }
-      },
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-      credentials: false,
-    })
-  );
+  // CORS disabled for now
+  // app.use(
+  //   cors({
+  //     origin: true, // Allow all origins for now
+  //     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  //     allowedHeaders: ["Content-Type", "Authorization"],
+  //     credentials: false,
+  //   })
+  // );
 
   // Handle preflight requests
-  app.options("*", cors());
+  // app.options("*", cors());
 
   // Security & utilities
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));

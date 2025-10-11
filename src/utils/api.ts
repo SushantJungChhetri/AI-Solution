@@ -114,19 +114,13 @@ export const adminMetricsAPI = createApiClient('/admin/metrics', true);
 // AI API (assuming public or auth based on usage)
 export const aiAPI = createApiClient('/ai');
 
-// Auth API for admin login (with auth, but sendOTP/verifyOTP don't require token)
+// Auth API for admin login (with auth, but login doesn't require token)
 export const authAPI = {
-  ...createApiClient('/auth', false), // No auth for initial sendOTP
-  sendOTP: async (email: string, password: string) => {
+  ...createApiClient('/auth', false), // No auth for login
+  login: async (email: string, password: string) => {
     return apiRequest('/auth/login', {
       method: 'POST',
       body: { email, password }
-    });
-  },
-  verifyOTP: async (email: string, otp: string) => {
-    return apiRequest('/auth/verify-otp', {
-      method: 'POST',
-      body: { email, otp }
     });
   }
 };

@@ -1,18 +1,16 @@
 
 
--- 1) ADMINS (OTP-based login compatible)
+-- 1) ADMINS
 CREATE TABLE IF NOT EXISTS admins (
   id SERIAL PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  otp_code TEXT,
-  otp_expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-ALTER TABLE admins
-ADD COLUMN IF NOT EXISTS otp_code TEXT,
-ADD COLUMN IF NOT EXISTS otp_expires_at TIMESTAMPTZ;
+-- Remove OTP columns as OTP is no longer used
+ALTER TABLE admins DROP COLUMN IF EXISTS otp_code;
+ALTER TABLE admins DROP COLUMN IF EXISTS otp_expires_at;
 
 
 -- Ensure an admin user exists (hash can be updated later by seed script)

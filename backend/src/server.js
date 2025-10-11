@@ -7,7 +7,7 @@ import { assertDatabaseConnectionOk } from './db.js';
 const root = express();
 root.use('/api', createApi());
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   const PORT = Number(process.env.PORT || 3000);
   (async () => {
     await assertDatabaseConnectionOk();

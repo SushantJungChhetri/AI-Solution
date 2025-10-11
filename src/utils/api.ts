@@ -1,4 +1,8 @@
+// src/utils/api.ts
 
+/***********************
+ * 1) Decide the base URL
+ ***********************/
 const rawBase =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
   '/api';
@@ -8,7 +12,7 @@ const stripLeadingSlash = (s: string) => s.replace(/^\/+/g, '');
 const API_BASE_URL = stripTrailingSlash(rawBase);
 
 /***********************
- * 2) Safe URL joiner: avoids double slashes
+ * 2) Safe URL joiner
  ***********************/
 const joinUrl = (base: string, path: string) =>
   `${stripTrailingSlash(base)}/${stripLeadingSlash(path)}`;
@@ -17,14 +21,13 @@ const joinUrl = (base: string, path: string) =>
  * 3) Shared types
  ***********************/
 type ApiRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
-  body?: any; // allow objects; we'll JSON.stringify unless FormData
+  body?: any;
   headers?: HeadersInit;
   query?: Record<string, string | number | boolean | undefined | null>;
 };
 
 /***********************
  * 4) Auth header helper
- *    - Include Content-Type by default for JSON
  ***********************/
 export const getAuthHeaders = (includeContentType: boolean = true) => {
   const token = localStorage.getItem('adminToken');
@@ -35,7 +38,7 @@ export const getAuthHeaders = (includeContentType: boolean = true) => {
 };
 
 /***********************
- * 5) Query string helper (skips undefined/null)
+ * 5) Query string helper
  ***********************/
 const toQueryString = (q?: ApiRequestOptions['query']) => {
   if (!q) return '';
@@ -50,36 +53,26 @@ const toQueryString = (q?: ApiRequestOptions['query']) => {
 
 /***********************
  * 6) Core request function
- *    - Builds final URL with base + endpoint + ?query
- *    - Adds auth header if token exists (unless already set)
- *    - JSON by default; respects FormData
- *    - Surfaces server error payload when available
  ***********************/
 export const apiRequest = async (endpoint: string, options: ApiRequestOptions = {}) => {
   const token = localStorage.getItem('adminToken');
   const isForm = options.body instanceof FormData;
 
-  // Build URL (with optional ?query)
   const queryPart = toQueryString(options.query);
   const url = joinUrl(API_BASE_URL, `${endpoint}${queryPart}`);
 
-  // Start with provided headers
   const headers = new Headers(options.headers);
 
-  // Add Authorization if we have a token and it's not already present
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  // Set JSON content type if we're not sending FormData and header not set
   if (!isForm && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  // Prepare body
   let body: BodyInit | undefined = options.body as any;
   if (!isForm && body != null && typeof body !== 'string') {
-    // Only stringify plain objects; skip Blob/ArrayBuffer/URLSearchParams/etc.
     if (
       !(body instanceof Blob) &&
       !(body instanceof ArrayBuffer) &&
@@ -95,25 +88,21 @@ export const apiRequest = async (endpoint: string, options: ApiRequestOptions = 
     method: options.method || 'GET',
     headers,
     body,
-    // credentials default left alone; add `credentials: 'include'` if you use cookies
   });
 
   if (!res.ok) {
-    // Try to surface useful server error
     let msg = `API ${res.status} ${res.statusText}`;
     try {
       const ct = res.headers.get('content-type') || '';
       if (ct.includes('application/json')) {
         const data = await res.json();
-        if (data?.error) msg = `${msg}: ${data.error}`;
+        if ((data as any)?.error) msg = `${msg}: ${(data as any).error}`;
         else if (typeof data === 'string') msg = `${msg}: ${data}`;
       } else {
         const t = await res.text();
         if (t) msg = `${msg}: ${t.slice(0, 500)}`;
       }
-    } catch {
-      // ignore parse errors
-    }
+    } catch {}
     throw new Error(msg);
   }
 
@@ -126,9 +115,6 @@ export const apiRequest = async (endpoint: string, options: ApiRequestOptions = 
 
 /***********************
  * 7) Generic API client factory
- *    - All endpoints built off a basePath (e.g. '/articles')
- *    - `list()` accepts query object
- *    - `upload()` respects FormData (no manual content-type)
  ***********************/
 const createApiClient = (basePath: string, useAuth: boolean = false) => {
   const base = basePath.startsWith('/') ? basePath : `/${basePath}`;
@@ -167,7 +153,7 @@ const createApiClient = (basePath: string, useAuth: boolean = false) => {
       apiRequest(joinUrl(base, 'upload'), {
         method: 'POST',
         body: formData,
-        headers: useAuth ? getAuthHeaders(false) : undefined, // no Content-Type for FormData
+        headers: useAuth ? getAuthHeaders(false) : undefined,
       }),
   };
 };
@@ -199,6 +185,12 @@ export const authAPI = {
   login: (email: string, password: string) =>
     apiRequest('/auth/login', { method: 'POST', body: { email, password } }),
 };
+
+/***********************
+ * 11) ✅ AI API (added back to satisfy AIChatModal import)
+ *     - No auth by default; flip to `true` if your /ai route requires admin token
+ ***********************/
+export const aiAPI = createApiClient('/ai', false);
 
 // Optional re-exports
 export { API_BASE_URL, joinUrl };

@@ -2,17 +2,35 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
+
+    /* Include DOM types so ReadableStream/FormData/etc. are known */
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
+
     "module": "ESNext",
+
+    /* Faster, safer builds */
     "skipLibCheck": true,
 
-    /* Bundler mode */
+    /* Bundler mode (Vite) */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+
+    /* Make CommonJS imports painless */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Import JSON if needed */
+    "resolveJsonModule": true,
+
+    /* So TS knows about import.meta.env, HMR types, etc. */
+    "types": ["vite/client"],
+
+    /* Optional quality-of-life */
+    "baseUrl": ".",
 
     /* Linting */
     "strict": true,

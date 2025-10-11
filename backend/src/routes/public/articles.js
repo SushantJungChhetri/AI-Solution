@@ -17,8 +17,8 @@ r.get('/', async (req, res, next) => {
         id,
         title,
         slug,
-        LEFT(COALESCE(content, ''), 180) AS excerpt, -- derived, since column doesn't exist
-        content,
+        excerpt,                         -- real column
+        description AS content,          -- alias for frontend compatibility
         author,
         category,
         featured,
@@ -49,8 +49,8 @@ r.get('/slug/:slug', async (req, res, next) => {
         id,
         title,
         slug,
-        LEFT(COALESCE(content, ''), 180) AS excerpt, -- keep shape consistent
-        content,
+        excerpt,
+        description AS content,          -- alias for frontend compatibility
         author,
         category,
         featured,

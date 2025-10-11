@@ -17,15 +17,15 @@ r.get('/', async (req, res, next) => {
       SELECT
         id,
         name,
+        company,
+        project,
         comment,
         rating,
-        verified,
-        created_at AS date,         -- alias for frontend "date"
-        NULL::text AS company,      -- alias (not in schema)
-        NULL::text AS project       -- alias (not in schema)
+        is_approved AS verified,  -- compat alias for frontend
+        date
       FROM feedback
-      WHERE ($1::boolean IS FALSE) OR (verified = TRUE)
-      ORDER BY created_at DESC
+      WHERE ($1::boolean IS FALSE) OR (is_approved = TRUE)
+      ORDER BY date DESC
       LIMIT $2 OFFSET $3
       `,
       [verified, limit, offset]

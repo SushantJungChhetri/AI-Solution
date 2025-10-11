@@ -15,13 +15,17 @@ r.get('/', async (req, res, next) => {
         id,
         title,
         description,
-        event_date,
-        event_date::date AS date, -- alias for frontend
+        date,                 -- real column (timestamptz)
+        date AS event_date,   -- compat alias for older frontend
+        "time",               -- real column (time)
         location,
+        type,
+        status,
+        image_url,
         created_at,
         updated_at
       FROM events
-      ORDER BY event_date DESC
+      ORDER BY date DESC, "time" DESC NULLS LAST
       LIMIT $1
       `,
       [limit]

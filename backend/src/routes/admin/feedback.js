@@ -1,5 +1,6 @@
-// ...imports...
-// CREATE
+import { Router } from 'express';
+const router = Router();
+
 router.post('/', async (req, res, next) => {
   try {
     const { name, company, project, comment, rating, is_approved } = req.body;
@@ -15,7 +16,7 @@ router.post('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// UPDATE (approve, edit, etc.)
+
 router.put('/:id', async (req, res, next) => {
   try {
     const { name, company, project, comment, rating, is_approved } = req.body;
@@ -39,3 +40,5 @@ router.put('/:id', async (req, res, next) => {
     res.json(rows[0]);
   } catch (e) { next(e); }
 });
+
+export default router;

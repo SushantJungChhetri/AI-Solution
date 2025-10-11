@@ -1,5 +1,6 @@
-// ...imports...
-// CREATE
+import { Router } from 'express';
+const router = Router();
+
 router.post('/', async (req, res, next) => {
   try {
     const { title, slug, description, excerpt, author, category, featured, published_at } = req.body;
@@ -43,3 +44,5 @@ router.put('/:id', async (req, res, next) => {
     res.json(rows[0]);
   } catch (e) { next(e); }
 });
+
+export default router;

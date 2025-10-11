@@ -60,6 +60,22 @@ router.post('/', upload.single('image'), async (req, res, next) => {
   }
 });
 
+// GET /admin/galleries/:id - get single gallery image
+router.get('/:id', async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `SELECT id, filename, url, uploaded_at AS "uploadedAt"
+       FROM gallery_images
+       WHERE id = $1`,
+      [Number(req.params.id)]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Image not found' });
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
 // DELETE /admin/galleries/:id - delete a gallery image (DB row only)
 // (If you also want to delete the Blob object, store the blob key and call @vercel/blob del() here.)
 router.delete('/:id', async (req, res, next) => {

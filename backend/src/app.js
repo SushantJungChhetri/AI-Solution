@@ -55,24 +55,24 @@ export function createApi() {
   app.use(morgan("dev"));
 
   // Health check
-  app.get('/', (_req, res) => res.json({ ok: true, service: 'AI-Solution API' }));
-  app.get('/health', (_req, res) => res.json({ ok: true }));
+  app.get('/api/', (_req, res) => res.json({ ok: true, service: 'AI-Solution API' }));
+  app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
   // Public routes
-  app.use('/articles', publicArticles);
-  app.use('/events', publicEvents);
-  app.use('/feedback', publicFeedback);
-  app.use('/inquiries', publicInquiries);
-  app.use('/galleries', publicGalleries);
+  app.use('/api/articles', publicArticles);
+  app.use('/api/events', publicEvents);
+  app.use('/api/feedback', publicFeedback);
+  app.use('/api/inquiries', publicInquiries);
+  app.use('/api/galleries', publicGalleries);
 
   // Admin routes
-  app.use('/auth', adminAuth);
-  app.use('/admin/inquiries', adminInquiries);
-  app.use('/admin/articles', adminArticles);
-  app.use('/admin/events', adminEvents);
-  app.use('/admin/feedback', adminFeedback);
-  app.use('/admin/metrics', adminMetrics);
-  app.use('/admin/galleries', adminGalleries);
+  app.use('/api/auth', adminAuth);
+  app.use('/api/admin/inquiries', adminInquiries);
+  app.use('/api/admin/articles', adminArticles);
+  app.use('/api/admin/events', adminEvents);
+  app.use('/api/admin/feedback', adminFeedback);
+  app.use('/api/admin/metrics', adminMetrics);
+  app.use('/api/admin/galleries', adminGalleries);
 
   return app;
 }

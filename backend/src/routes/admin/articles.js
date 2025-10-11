@@ -29,6 +29,127 @@ const upload = multer({
 const router = express.Router();
 router.use(requireAuth);
 
+/** GET /admin/articles - list all articles for admin */
+router.get('/', async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(Math.max(1, Number(req.query.limit || 10)), 100);
+    const offset = (page - 1) * limit;
+
+    const params = [];
+    const where = [];
+
+    if (req.query.category) {
+      params.push(String(req.query.category));
+      where.push(`LOWER(category) = LOWER($${params.length})`);
+    }
+
+    if (req.query.search) {
+      const s = String(req.query.search).trim();
+      params.push(`%${s}%`);
+      where.push(`(title ILIKE $${params.length} OR excerpt ILIKE $${params.length})`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const { rows } = await query(`
+      SELECT
+        id,
+        slug,
+        title,
+        excerpt,
+        author,
+        published_at AS "publishedAt",
+        read_time AS "readTime",
+        category,
+        tags,
+        views,
+        featured,
+        image,
+        created_at,
+        updated_at
+      FROM articles
+      ${whereSql}
+      ORDER BY published_at DESC NULLS LAST, id DESC
+      LIMIT ${limit} OFFSET ${offset};
+    `, params);
+
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** GET /admin/articles/:id */
+router.get('/:id', async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `
+      SELECT
+        id,
+        slug,
+        title,
+        excerpt,
+        description,
+        author,
+        published_at AS "publishedAt",
+        read_time AS "readTime",
+        category,
+        tags,
+        views,
+        featured,
+        image,
+        created_at,
+        updated_at
+      FROM articles
+      WHERE id = $1
+      `,
+      [req.params.id]
+    );
+
+    if (!rows[0]) return res.status(404).json({ error: 'Article not found' });
+
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** GET /admin/articles/slug/:slug */
+router.get('/slug/:slug', async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `
+      SELECT
+        id,
+        slug,
+        title,
+        excerpt,
+        description,
+        author,
+        published_at AS "publishedAt",
+        read_time AS "readTime",
+        category,
+        tags,
+        views,
+        featured,
+        image,
+        created_at,
+        updated_at
+      FROM articles
+      WHERE slug = $1
+      `,
+      [req.params.slug]
+    );
+
+    if (!rows[0]) return res.status(404).json({ error: 'Article not found' });
+
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
 /** CREATE */
 router.post('/', upload.single('image'), async (req, res, next) => {
   try {

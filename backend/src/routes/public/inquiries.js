@@ -6,6 +6,48 @@ import { query } from '../../db.js';
 const router = express.Router();
 const limiter = rateLimit({ windowMs: 60 * 1000, max: 5 });
 
+router.get('/', async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(Math.max(1, Number(req.query.limit || 10)), 100);
+    const offset = (page - 1) * limit;
+
+    const { rows } = await query(
+      `
+      SELECT id, name, email, phone, company, country, job_title AS "jobTitle", job_details AS "jobDetails", submitted_at AS "submittedAt"
+      FROM customer_inquiries
+      ORDER BY submitted_at DESC
+      LIMIT $1 OFFSET $2
+      `,
+      [limit, offset]
+    );
+
+    res.json(rows);
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** GET /inquiries/:id */
+router.get('/:id', async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `
+      SELECT id, name, email, phone, company, country, job_title AS "jobTitle", job_details AS "jobDetails", submitted_at AS "submittedAt"
+      FROM customer_inquiries
+      WHERE id = $1
+      `,
+      [req.params.id]
+    );
+
+    if (!rows[0]) return res.status(404).json({ error: 'Inquiry not found' });
+
+    res.json(rows[0]);
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post('/', limiter, async (req, res, next) => {
   try {
     const parsed = inquirySchema.parse(req.body);

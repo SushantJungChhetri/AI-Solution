@@ -79,4 +79,54 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+/** GET /events/:id */
+router.get('/:id', async (req, res, next) => {
+  try {
+    const { rows } = await query(
+      `
+      SELECT
+        id,
+        title,
+        description,
+        date,
+        time_range,
+        location,
+        type,
+        status,
+        attendees,
+        max_attendees,
+        image_filename,
+        image_url,
+        featured
+      FROM events
+      WHERE id = $1
+      `,
+      [req.params.id]
+    );
+
+    if (!rows[0]) return res.status(404).json({ error: 'Event not found' });
+
+    const r = rows[0];
+    const today = new Date().toISOString().slice(0, 10);
+    const data = {
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      date: r.date,
+      timeRange: r.time_range ?? null,
+      location: r.location,
+      type: r.type,
+      status: r.status ?? (r.date >= today ? 'upcoming' : 'past'),
+      attendees: r.attendees,
+      maxAttendees: r.max_attendees,
+      featured: !!r.featured,
+      imageUrl: r.image_url || makeImageUrl(req, r.image_filename),
+    };
+
+    res.json(data);
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default router;

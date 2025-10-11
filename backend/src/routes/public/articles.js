@@ -77,8 +77,8 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-/** GET /articles/:slug */
-router.get('/:slug', async (req, res, next) => {
+/** GET /articles/slug/:slug */
+router.get('/slug/:slug', async (req, res, next) => {
   try {
     const { rows } = await query(
       `

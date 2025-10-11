@@ -32,7 +32,8 @@ export function createApi() {
       origin: function (origin, callback) {
         if (!origin) return callback(null, true);
 
-        if (allowedOrigins.includes(origin)) {
+        const normalizedOrigin = origin.replace(/\/$/, '');
+        if (allowedOrigins.includes(normalizedOrigin)) {
           return callback(null, true);
         } else {
           console.warn("[CORS blocked]:", origin);
